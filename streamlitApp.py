@@ -1,91 +1,88 @@
 import streamlit as st
-import whisper
 from moviepy.editor import VideoFileClip
-import numpy as np
-from transformers import BertTokenizer, BertModel
-import torch
+from pydub import AudioSegment
+import speech_recognition as sr
+import tempfile
 import os
 
-# Load the pre-trained BERT model and tokenizer
-tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-model = BertModel.from_pretrained('bert-base-uncased')
+# Mock function to simulate scoring based on predefined criteria
+def evaluate_interview(transcript):
+    # For simplicity, let's score based on the length of the response.
+    # You can replace this logic with your own AI-based evaluation logic.
+    word_count = len(transcript.split())
+    if word_count > 50:
+        return 10  # Excellent
+    elif word_count > 30:
+        return 7   # Good
+    elif word_count > 15:
+        return 5   # Average
+    else:
+        return 2   # Needs Improvement
 
-# Load Whisper model
-whisper_model = whisper.load_model("base")
+# Function to transcribe audio using SpeechRecognition
+def transcribe_audio(audio_file):
+    recognizer = sr.Recognizer()
+    
+    # Load the audio file using SpeechRecognition
+    with sr.AudioFile(audio_file) as source:
+        audio_data = recognizer.record(source)
+        try:
+            # Use Google Web Speech API for transcription
+            transcription = recognizer.recognize_google(audio_data)
+            return transcription
+        except sr.UnknownValueError:
+            return "Audio unintelligible"
+        except sr.RequestError:
+            return "Could not request results from the speech recognition service"
 
-# Define criteria for scoring
-criteria = {
-    "technical": ["machine learning", "data", "preprocess", "decision tree", "SVM", "neural network", "hyperparameter"],
-    "problem_solving": ["cross-validation", "grid search", "evaluate", "optimize", "performance"],
-    "communication": ["I would", "then", "and", "also"]
-}
-
-# Function to encode a response using BERT
-def encode_response(response):
-    inputs = tokenizer(response, return_tensors='pt', padding=True, truncation=True)
-    outputs = model(**inputs)
-    return outputs.last_hidden_state.mean(dim=1).squeeze().detach().numpy()
-
-# Function to score the response based on predefined criteria
-def score_response(response, criteria):
-    scores = {}
-    for criterion, keywords in criteria.items():
-        scores[criterion] = sum([1 for word in keywords if word in response]) / len(keywords)
-    return scores
-
-# Function to rank candidates by average score
-def rank_candidates(candidates):
-    for candidate in candidates:
-        avg_score = np.mean(list(candidate['scores'].values()))
-        candidate['avg_score'] = avg_score
-    ranked_candidates = sorted(candidates, key=lambda x: x['avg_score'], reverse=True)
-    return ranked_candidates
-
-# Function to extract audio from the video and perform transcription using Whisper
+# Function to extract audio from the video and perform transcription
 def transcribe_video(video_file):
-    video = VideoFileClip(video_file)
+    # Save the uploaded video file to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+        tmp_file.write(video_file.read())
+        tmp_filename = tmp_file.name
+    
+    # Process the video using the saved temporary file
+    video = VideoFileClip(tmp_filename)
+    
+    # Create a temporary audio file
     audio_file = "audio.wav"
     video.audio.write_audiofile(audio_file)
-    
-    # Perform transcription with Whisper
-    transcription = whisper_model.transcribe(audio_file)
-    os.remove(audio_file)  # Remove the audio file after transcription
-    return transcription['text']
 
-# Streamlit app
-st.title("AI Role Candidate Screening via Video Interview")
+    # Now, pass `audio_file` to your transcription function
+    transcription = transcribe_audio(audio_file)
 
-# Input for the number of candidates
-num_candidates = st.number_input("Enter the number of candidates:", min_value=1, max_value=10, value=1)
+    # Clean up the temporary files
+    os.remove(tmp_filename)
+    os.remove(audio_file)
 
+    return transcription
+
+# Streamlit App Interface
+st.title("AI Interview Response Evaluator")
+
+# Collecting interview videos and evaluating responses
 mock_interviews = []
+num_candidates = st.number_input("Enter number of candidates", min_value=1, max_value=10, value=1)
+
 for i in range(num_candidates):
-    video_file = st.file_uploader(f"Upload interview video for Candidate {i+1}:", type=["mp4", "mov", "avi"], key=f"video_{i}")
+    st.write(f"Candidate {i+1}")
+    video_file = st.file_uploader(f"Upload interview video for Candidate {i+1}", type=["mp4", "mov", "avi"])
+    
     if video_file:
         st.write(f"Processing video for Candidate {i+1}...")
         transcription = transcribe_video(video_file)
         st.write(f"Transcript for Candidate {i+1}: {transcription}")
-        mock_interviews.append({"name": f"Candidate {i+1}", "response": transcription})
+        
+        # Evaluate the transcript and give a score
+        score = evaluate_interview(transcription)
+        st.write(f"Score for Candidate {i+1}: {score}/10")
+        
+        # Append mock interview results
+        mock_interviews.append({"name": f"Candidate {i+1}", "response": transcription, "score": score})
 
-# Analyze the candidates when the user clicks the "Analyze" button
-if st.button('Analyze Responses'):
-    if mock_interviews:
-        # Encode and score each candidate
-        scored_candidates = []
-        for candidate in mock_interviews:
-            scores = score_response(candidate['response'], criteria)
-            candidate['scores'] = scores
-            candidate['encoded'] = encode_response(candidate['response'])
-            scored_candidates.append(candidate)
-        
-        # Rank the candidates based on scores
-        ranked_candidates = rank_candidates(scored_candidates)
-        
-        # Display the results
-        st.write("### Candidate Rankings")
-        for rank, candidate in enumerate(ranked_candidates, 1):
-            st.write(f"**Rank {rank}: {candidate['name']}**")
-            st.write(f"Average Score: {candidate['avg_score']:.2f}")
-            st.write(f"Scores: {candidate['scores']}")
-    else:
-        st.write("Please upload videos for all candidates.")
+# Show final results
+if len(mock_interviews) > 0:
+    st.write("Final Results:")
+    for interview in mock_interviews:
+        st.write(f"{interview['name']}: {interview['score']}/10")
