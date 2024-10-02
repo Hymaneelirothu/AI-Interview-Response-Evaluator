@@ -1,6 +1,7 @@
 import streamlit as st
 import whisper
 from moviepy.editor import VideoFileClip
+from tempfile import NamedTemporaryFile
 import numpy as np
 from transformers import BertTokenizer, BertModel
 import torch
