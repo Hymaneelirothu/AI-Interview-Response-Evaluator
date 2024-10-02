@@ -1,11 +1,17 @@
 import streamlit as st
+import whisper
+from moviepy.editor import VideoFileClip
+import numpy as np
 from transformers import BertTokenizer, BertModel
 import torch
-import numpy as np
+import os
 
 # Load the pre-trained BERT model and tokenizer
 tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 model = BertModel.from_pretrained('bert-base-uncased')
+
+# Load Whisper model
+whisper_model = whisper.load_model("base")
 
 # Define criteria for scoring
 criteria = {
@@ -35,19 +41,31 @@ def rank_candidates(candidates):
     ranked_candidates = sorted(candidates, key=lambda x: x['avg_score'], reverse=True)
     return ranked_candidates
 
+# Function to extract audio from the video and perform transcription using Whisper
+def transcribe_video(video_file):
+    video = VideoFileClip(video_file)
+    audio_file = "audio.wav"
+    video.audio.write_audiofile(audio_file)
+    
+    # Perform transcription with Whisper
+    transcription = whisper_model.transcribe(audio_file)
+    os.remove(audio_file)  # Remove the audio file after transcription
+    return transcription['text']
+
 # Streamlit app
-st.title("AI Role Candidate Screening")
+st.title("AI Role Candidate Screening via Video Interview")
 
 # Input for the number of candidates
-num_candidates = st.number_input("Enter the number of candidates:", min_value=1, max_value=10, value=3)
+num_candidates = st.number_input("Enter the number of candidates:", min_value=1, max_value=10, value=1)
 
-# Create input fields for candidate names and responses
 mock_interviews = []
 for i in range(num_candidates):
-    name = st.text_input(f"Enter the name of Candidate {i+1}:", key=f"name_{i}")
-    response = st.text_area(f"Enter the interview response for {name}:", key=f"response_{i}")
-    if name and response:
-        mock_interviews.append({"name": name, "response": response})
+    video_file = st.file_uploader(f"Upload interview video for Candidate {i+1}:", type=["mp4", "mov", "avi"], key=f"video_{i}")
+    if video_file:
+        st.write(f"Processing video for Candidate {i+1}...")
+        transcription = transcribe_video(video_file)
+        st.write(f"Transcript for Candidate {i+1}: {transcription}")
+        mock_interviews.append({"name": f"Candidate {i+1}", "response": transcription})
 
 # Analyze the candidates when the user clicks the "Analyze" button
 if st.button('Analyze Responses'):
@@ -70,4 +88,4 @@ if st.button('Analyze Responses'):
             st.write(f"Average Score: {candidate['avg_score']:.2f}")
             st.write(f"Scores: {candidate['scores']}")
     else:
-        st.write("Please enter candidate responses.")
+        st.write("Please upload videos for all candidates.")
