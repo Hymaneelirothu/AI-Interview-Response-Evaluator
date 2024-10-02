@@ -43,13 +43,24 @@ def rank_candidates(candidates):
 
 # Function to extract audio from the video and perform transcription using Whisper
 def transcribe_video(video_file):
-    video = VideoFileClip(video_file)
+    # Save the uploaded file to a temporary location
+    with NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video_file:
+        temp_video_file.write(video_file.read())  # Write video file to the temp file
+        temp_video_path = temp_video_file.name
+
+    # Load the video and extract audio
+    video = VideoFileClip(temp_video_path)
     audio_file = "audio.wav"
     video.audio.write_audiofile(audio_file)
     
     # Perform transcription with Whisper
+    whisper_model = whisper.load_model("base")  # Ensure model is loaded here
     transcription = whisper_model.transcribe(audio_file)
-    os.remove(audio_file)  # Remove the audio file after transcription
+
+    # Clean up temporary files
+    os.remove(audio_file)
+    os.remove(temp_video_path)
+
     return transcription['text']
 
 # Streamlit app
