@@ -5,5 +5,5 @@ torch
 transformers
 numpy
 ffmpeg
-llvmlite==0.39.0
-numba==0.54.0
+llvmlite>=0.40.0
+numba>=0.56.0
